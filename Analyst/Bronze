@@ -1,0 +1,133 @@
+/* =====================================================================
+   Kimia Farma Performance Analytics — BRONZE LAYER
+   ===================================================================== */
+
+-- =========================================================
+-- Create schema
+-- =========================================================
+CREATE SCHEMA IF NOT EXISTS `rakamin-kf-analytics.kimia_farma`;
+
+-- =========================================================
+-- Create table: bronze_final_transaction
+-- =========================================================
+DROP TABLE IF EXISTS `rakamin-kf-analytics.kimia_farma.bronze_final_transaction`;
+CREATE TABLE `rakamin-kf-analytics.kimia_farma.bronze_final_transaction` (
+    transaction_id      STRING,
+    date                STRING,
+    branch_id           INT,
+    customer_name       STRING,
+    product_id          STRING,
+    price               INT,
+    discount_percentage FLOAT,
+    rating              FLOAT
+);
+
+-- =========================================================
+-- Create table: bronze_inventory
+-- =========================================================
+DROP TABLE IF EXISTS `rakamin-kf-analytics.kimia_farma.bronze_inventory`;
+CREATE TABLE `rakamin-kf-analytics.kimia_farma.bronze_inventory` (
+    inventory_id  STRING,
+    branch_id     INT,
+    product_id    STRING,
+    product_name  STRING,
+    opname_stock  INT
+);
+
+-- =========================================================
+-- Create table: bronze_kantor_cabang
+-- =========================================================
+DROP TABLE IF EXISTS `rakamin-kf-analytics.kimia_farma.bronze_kantor_cabang`;
+CREATE TABLE `rakamin-kf-analytics.kimia_farma.bronze_kantor_cabang` (
+    branch_id       INT,
+    branch_category STRING,
+    branch_name     STRING,
+    kota            STRING,
+    provinsi        STRING,
+    rating          FLOAT
+);
+
+-- =========================================================
+-- Create table: bronze_product
+-- =========================================================
+DROP TABLE IF EXISTS `rakamin-kf-analytics.kimia_farma.bronze_product`;
+
+CREATE TABLE `rakamin-kf-analytics.kimia_farma.bronze_product` (
+    product_id       STRING,
+    product_name     STRING,
+    product_category STRING,
+    price            INT64
+);
+
+- =========================================================
+-- Load data
+-- =========================================================
+TRUNCATE TABLE bronze.kf_final_transaction;
+BULK INSERT bronze.kf_final_transaction
+FROM 'D:\Data\kf_final_transaction.csv'
+WITH (
+    FORMAT = 'CSV',
+    FIELDQUOTE = '"',
+    FIRSTROW = 2,
+    FIELDTERMINATOR = ',',
+    ROWTERMINATOR = '\n',   -- jika error coba '0x0a'
+    TABLOCK
+);
+GO
+ 
+TRUNCATE TABLE bronze.kf_inventory;
+BULK INSERT bronze.kf_inventory
+FROM 'D:\Data\kf_inventory.csv'
+WITH (
+    FORMAT = 'CSV',
+    FIELDQUOTE = '"',
+    FIRSTROW = 2,
+    FIELDTERMINATOR = ',',
+    ROWTERMINATOR = '\n',
+    TABLOCK
+);
+GO
+ 
+TRUNCATE TABLE bronze.kf_kantor_cabang;
+BULK INSERT bronze.kf_kantor_cabang
+FROM 'D:\Data\kf_kantor_cabang.csv'
+WITH (
+    FORMAT = 'CSV',
+    FIELDQUOTE = '"',
+    FIRSTROW = 2,
+    FIELDTERMINATOR = ',',
+    ROWTERMINATOR = '\n',
+    TABLOCK
+);
+GO
+ 
+TRUNCATE TABLE bronze.kf_product;
+BULK INSERT bronze.kf_product
+FROM 'D:\Data\kf_product.csv'
+WITH (
+    FORMAT = 'CSV',
+    FIELDQUOTE = '"',
+    FIRSTROW = 2,
+    FIELDTERMINATOR = ',',
+    ROWTERMINATOR = '\n',
+    TABLOCK
+);
+GO
+ 
+-- =========================================================
+-- Cek jumlah data
+-- =========================================================
+SELECT 'transaction' AS tabel, COUNT(*) AS total_baris FROM bronze.kf_final_transaction
+UNION ALL SELECT 'inventory',     COUNT(*) FROM bronze.kf_inventory
+UNION ALL SELECT 'kantor_cabang', COUNT(*) FROM bronze.kf_kantor_cabang
+UNION ALL SELECT 'product',       COUNT(*) FROM bronze.kf_product;
+GO
+ 
+-- =========================================================
+-- Cek isi data
+-- =========================================================
+SELECT TOP 100 * FROM bronze.kf_final_transaction;
+SELECT TOP 100 * FROM bronze.kf_inventory;
+SELECT TOP 100 * FROM bronze.kf_kantor_cabang;
+SELECT TOP 100 * FROM bronze.kf_product;
+GO
