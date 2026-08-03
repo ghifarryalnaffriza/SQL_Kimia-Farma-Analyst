@@ -1,0 +1,91 @@
+/* =====================================================================
+   Kimia Farma Performance Analytics — SILVER QUALITY
+   ===================================================================== */
+-- =========================================================
+-- silver.kf_final_transaction
+-- =========================================================
+-- PK: NULL & duplikat
+SELECT transaction_id, COUNT(*) AS jml
+FROM silver.kf_final_transaction
+GROUP BY transaction_id
+HAVING COUNT(*) > 1 OR transaction_id IS NULL;
+
+-- Missing values kolom wajib
+SELECT
+    SUM(CASE WHEN date IS NULL THEN 1 ELSE 0 END)          AS date_gagal_cast,
+    SUM(CASE WHEN branch_id IS NULL THEN 1 ELSE 0 END)     AS null_branch_id,
+    SUM(CASE WHEN product_id IS NULL THEN 1 ELSE 0 END)    AS null_product_id,
+    SUM(CASE WHEN price IS NULL THEN 1 ELSE 0 END)         AS null_price
+FROM silver.kf_final_transaction;
+
+-- Unwanted spaces
+SELECT transaction_id
+FROM silver.kf_final_transaction
+WHERE transaction_id <> TRIM(transaction_id)
+   OR customer_name  <> TRIM(customer_name)
+   OR product_id     <> TRIM(product_id);
+
+-- Outlier / invalid value
+SELECT *
+FROM silver.kf_final_transaction
+WHERE price <= 0
+   OR discount_percentage NOT BETWEEN 0 AND 1
+   OR rating_transaksi    NOT BETWEEN 0 AND 5;
+
+-- Business logic: rentang periode analisis & kebijakan diskon max 15%
+SELECT *
+FROM silver.kf_final_transaction
+WHERE date NOT BETWEEN '2020-01-01' AND '2023-12-31'
+   OR date > GETDATE()
+   OR discount_percentage > 0.15;
+
+-- =========================================================
+-- silver.kf_inventory
+-- =========================================================
+-- PK: NULL & duplikat
+SELECT inventory_id, COUNT(*) AS jml
+FROM silver.kf_inventory
+GROUP BY inventory_id
+HAVING COUNT(*) > 1 OR inventory_id IS NULL;
+
+-- Outlier: stok negatif
+SELECT * FROM silver.kf_inventory WHERE opname_stock < 0;
+
+SELECT DISTINCT i.product_id
+FROM silver.kf_inventory i
+WHERE i.product_id NOT IN (SELECT product_id FROM silver.kf_product);
+
+-- Konsistensi salinan denormalisasi product_name
+SELECT i.inventory_id, i.product_name, p.product_name AS nama_master
+FROM silver.kf_inventory i
+JOIN silver.kf_product p ON i.product_id = p.product_id
+WHERE TRIM(i.product_name) <> TRIM(p.product_name);
+
+-- =========================================================
+-- silver.kf_kantor_cabang
+-- =========================================================
+-- PK: NULL & duplikat
+SELECT branch_id, COUNT(*) AS jml
+FROM silver.kf_kantor_cabang
+GROUP BY branch_id
+HAVING COUNT(*) > 1 OR branch_id IS NULL;
+
+-- Outlier rating
+SELECT * FROM silver.kf_kantor_cabang WHERE rating_cabang NOT BETWEEN 0 AND 5;
+
+-- =========================================================
+-- silver.kf_product
+-- =========================================================
+-- PK: NULL & duplikat
+SELECT product_id, COUNT(*) AS jml
+FROM silver.kf_product
+GROUP BY product_id
+HAVING COUNT(*) > 1 OR product_id IS NULL;
+
+-- Missing values & outlier harga
+SELECT *
+FROM silver.kf_product
+WHERE product_name IS NULL
+   OR product_category IS NULL
+   OR product_price IS NULL
+   OR product_price <= 0;
