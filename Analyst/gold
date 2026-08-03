@@ -1,0 +1,164 @@
+/*
+===============================================================================
+GOLD LAYER
+===============================================================================
+*/
+ 
+-- V1. Summary keseluruhan (scorecard)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_summary`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_summary` AS
+SELECT
+    COUNT(*)                            AS total_transaksi,
+    COUNT(DISTINCT branch_id)           AS total_cabang,
+    COUNT(DISTINCT provinsi)            AS total_provinsi,
+    SUM(nett_sales)                     AS total_nett_sales,
+    SUM(nett_profit)                    AS total_nett_profit,
+    SAFE_DIVIDE(SUM(nett_profit), SUM(nett_sales)) * 100 AS margin_pct,
+    AVG(rating_transaksi)               AS avg_rating_transaksi,
+    AVG(rating_cabang)                  AS avg_rating_cabang,
+    AVG(discount_percentage) * 100      AS avg_diskon_pct
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`;
+ 
+-- V2. Pendapatan tahun ke tahun (2020-2023)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_pendapatan_yoy`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_pendapatan_yoy` AS
+SELECT
+    EXTRACT(YEAR FROM date)             AS tahun,
+    COUNT(*)                            AS total_transaksi,
+    SUM(nett_sales)                     AS total_nett_sales,
+    SUM(nett_profit)                    AS total_nett_profit,
+    SAFE_DIVIDE(
+        SUM(nett_sales) - LAG(SUM(nett_sales)) OVER (ORDER BY EXTRACT(YEAR FROM date)),
+        LAG(SUM(nett_sales)) OVER (ORDER BY EXTRACT(YEAR FROM date))
+    ) * 100                             AS growth_sales_pct
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY tahun;
+ 
+-- V3. Top 10 provinsi berdasarkan total transaksi
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_top10_transaksi_provinsi`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_top10_transaksi_provinsi` AS
+SELECT provinsi, COUNT(*) AS total_transaksi, SUM(nett_sales) AS total_nett_sales
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY provinsi
+ORDER BY total_transaksi DESC
+LIMIT 10;
+ 
+-- V4. Top 10 provinsi berdasarkan nett sales
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_top10_nettsales_provinsi`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_top10_nettsales_provinsi` AS
+SELECT provinsi, SUM(nett_sales) AS total_nett_sales, SUM(nett_profit) AS total_nett_profit
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY provinsi
+ORDER BY total_nett_sales DESC
+LIMIT 10;
+ 
+-- V5. Top 5 cabang rating tertinggi namun rating transaksi terendah
+--     (kesenjangan reputasi cabang vs pengalaman transaksi)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_top5_gap_rating`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_top5_gap_rating` AS
+SELECT
+    branch_id, branch_name, kota, provinsi, rating_cabang,
+    AVG(rating_transaksi)                 AS avg_rating_transaksi,
+    rating_cabang - AVG(rating_transaksi) AS gap_rating,
+    COUNT(*)                              AS jml_transaksi
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY branch_id, branch_name, kota, provinsi, rating_cabang
+ORDER BY rating_cabang DESC, avg_rating_transaksi ASC
+LIMIT 5;
+ 
+-- V6. Geo map: total profit per provinsi
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_geo_profit_provinsi`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_geo_profit_provinsi` AS
+SELECT provinsi, SUM(nett_profit) AS total_nett_profit,
+       SUM(nett_sales) AS total_nett_sales, COUNT(*) AS total_transaksi
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY provinsi;
+ 
+-- E1. Kontribusi profit per tier harga (dari mana profit KF berasal?)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_profit_per_tier_harga`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_profit_per_tier_harga` AS
+SELECT
+    CONCAT(CAST(CAST(persentase_gross_laba*100 AS INT64) AS STRING), '% (',
+      CASE CAST(persentase_gross_laba*100 AS INT64)
+        WHEN 10 THEN '<= Rp50rb'  WHEN 15 THEN 'Rp50-100rb'
+        WHEN 20 THEN 'Rp100-300rb' WHEN 25 THEN 'Rp300-500rb'
+        ELSE '> Rp500rb' END, ')')             AS tier_harga,
+    COUNT(*)                                   AS jml_transaksi,
+    SUM(nett_sales)                            AS total_nett_sales,
+    SUM(nett_profit)                           AS total_nett_profit,
+    SAFE_DIVIDE(SUM(nett_profit),
+      SUM(SUM(nett_profit)) OVER ()) * 100     AS share_profit_pct
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY persentase_gross_laba;
+ 
+-- E2. Gap rating cabang vs transaksi per provinsi
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_gap_rating_provinsi`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_gap_rating_provinsi` AS
+SELECT
+    provinsi,
+    AVG(rating_cabang)                         AS avg_rating_cabang,
+    AVG(rating_transaksi)                      AS avg_rating_transaksi,
+    AVG(rating_cabang) - AVG(rating_transaksi) AS gap
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY provinsi;
+ 
+-- E3. Dampak diskon terhadap profit per transaksi
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_dampak_diskon`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_dampak_diskon` AS
+SELECT discount_percentage, COUNT(*) AS jml_transaksi,
+       AVG(nett_profit) AS avg_nett_profit, SUM(nett_profit) AS total_nett_profit
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY discount_percentage;
+ 
+-- E4. Top 10 produk penyumbang profit terbesar
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_top10_produk_profit`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_top10_produk_profit` AS
+SELECT product_id, product_name, COUNT(*) AS jml_transaksi,
+       SUM(nett_sales) AS total_nett_sales, SUM(nett_profit) AS total_nett_profit
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY product_id, product_name
+ORDER BY total_nett_profit DESC
+LIMIT 10;
+ 
+-- E5. Performa per kategori cabang (Apotek vs Klinik & Apotek vs KAL)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_performa_kategori_cabang`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_performa_kategori_cabang` AS
+SELECT
+    b.branch_category,
+    COUNT(*)                AS jml_transaksi,
+    SUM(a.nett_sales)       AS total_nett_sales,
+    SUM(a.nett_profit)      AS total_nett_profit,
+    AVG(a.rating_transaksi) AS avg_rating_transaksi
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis` a
+JOIN `rakamin-kf-analytics.kimia_farma.dim_branch`  b USING (branch_id)
+GROUP BY b.branch_category;
+ 
+-- E6. Tren pendapatan bulanan (pola musiman)
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_tren_bulanan`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_tren_bulanan` AS
+SELECT DATE_TRUNC(date, MONTH) AS bulan,
+       SUM(nett_sales) AS total_nett_sales, SUM(nett_profit) AS total_nett_profit
+FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+GROUP BY bulan;
+ 
+-- E7. Efisiensi inventory: stok mati & penjualan tanpa stok
+DROP VIEW IF EXISTS `rakamin-kf-analytics.kimia_farma.vw_efisiensi_inventory`;
+CREATE VIEW `rakamin-kf-analytics.kimia_farma.vw_efisiensi_inventory` AS
+WITH penjualan AS (
+    SELECT branch_id, product_id, COUNT(*) AS jml_terjual
+    FROM `rakamin-kf-analytics.kimia_farma.kf_analysis`
+    GROUP BY branch_id, product_id
+),
+stok AS (
+    SELECT branch_id, product_id, SUM(opname_stock) AS total_stok
+    FROM `rakamin-kf-analytics.kimia_farma.silver_inventory`
+    GROUP BY branch_id, product_id
+)
+SELECT
+    COUNT(*)                                                    AS total_pasangan_cabang_produk,
+    COUNTIF(p.jml_terjual IS NULL)                              AS stok_tanpa_penjualan,
+    SAFE_DIVIDE(COUNTIF(p.jml_terjual IS NULL), COUNT(*)) * 100 AS pct_stok_mati,
+    COUNTIF(s.total_stok IS NULL)                               AS penjualan_tanpa_stok,
+    SAFE_DIVIDE(COUNTIF(s.total_stok IS NULL), COUNT(*)) * 100  AS pct_penjualan_tanpa_stok
+FROM stok s
+FULL OUTER JOIN penjualan p USING (branch_id, product_id);
